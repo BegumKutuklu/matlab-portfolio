@@ -1,0 +1,166 @@
+
+T=0;
+dt0 = max(obs.r)/1000 ;
+max_photons = 5000 ; %maximum number of photons per observer to keep  
+
+%create figure
+figure('Position',[297   161   728   637]),hold on,grid on
+set(gca,'Units','points','Position',[73 53 400 400]) ;
+set(gca,'Units','normalized') ;
+horizon = rectangle('Position',[-1 -1 2 2],'Curvature',[1 1]) ;
+singularity = plot(0,0,'k.') ;
+ttl = title('T = 0') ;
+
+%draw observers 
+for k=1:length(obs)
+    obs(k).x = [0 obs(k).r obs(k).phi] ; %coordinates [t r phi]
+    obs(k).x0 = obs(k).x(2) ;
+    o(k) =  plot( obs(k).x(2)*cos(obs(k).x(3)) ,obs(k).x(2)*sin(obs(k).x(3)) , '*' ) ;
+    obs(k).tau=0 ; 
+    obs(k).v = [1 0 0] ; 
+    obs(k).p = 0 ;
+end
+
+%generate and draw photons
+for k=1:length(obs)
+    [obs(k).photons.X,obs(k).photons.V]=lightpulse(obs(k).r,obs(k).x(3),obs(k).n) ;
+    obs(k).photons.R = obs(k).photons.X(:,2) ;
+    h(k) = plot( obs(k).photons.X(:,2).*cos(obs(k).photons.X(:,3)) ,  obs(k).photons.X(:,2).*sin(obs(k).photons.X(:,3)) , '.' , 'Color' , o(k).Color) ;
+end
+
+if exist('Lim','var')
+    Lx = Lim(1:2) ;
+    Ly = Lim(3:4) ;
+    set(gca,'XLim',Lx,'YLim',Ly) ;
+else
+    Lx = get(gca,'XLim') ; 
+    Ly = get(gca,'YLim') ;
+end
+for k=1:length(obs)
+    txt(k) = text(min(Lx) + 0.1*diff(Lx),max(Ly) - 0.1*k*diff(Ly),sprintf('\\tau_%d = %f, r_%d = %f',k,obs(k).tau,k,obs(k).r)) ;
+end
+    
+axis manual;
+
+dt=dt0 ;
+
+while T<Tmax
+    T=T+dt;
+    %update observer coordinates 
+    for k=1:length(obs)
+        if obs(k).type == "fixed"
+            %observer is at fixed r
+            obs(k).tau = obs(k).tau + dt*real(sqrt(1-1/obs(k).r)) ;
+            
+        elseif obs(k).type == "free"
+            %observer in free fall, update coordinates according to
+            %geodesic equation
+            obs(k).x = obs(k).x + obs(k).v*dt ;
+            obs(k).r = obs(k).x(2) ;
+            
+            [C_r,C_p,C_t] = Christoffel(obs(k).r) ;
+            a0 = obs(k).v*squeeze(C_t)*obs(k).v' ;
+            obs(k).v(2) = obs(k).v(2) - dt*obs(k).v*squeeze(C_r)*obs(k).v' + dt*obs(k).v(2)*a0;
+            obs(k).v(3) = obs(k).v(3) - dt*obs(k).v*squeeze(C_p)*obs(k).v' + dt*obs(k).v(3)*a0;
+            
+            obs(k).dtau = dt*real(sqrt((1-1/obs(k).r) - 1/(1-1/obs(k).r)*obs(k).v(2)^2)) ;
+            obs(k).tau = obs(k).tau + obs(k).dtau ;
+            
+        end
+        
+        o(k).XData = obs(k).x(2)*cos(obs(k).x(3)) ;
+        o(k).YData = obs(k).x(2)*sin(obs(k).x(3)) ;
+    end
+    
+    %update photons
+    for k=1:length(obs)
+        [C_r,C_p,C_t] = Christoffel(obs(k).photons.R) ;
+        
+        obs(k).photons.X = obs(k).photons.X + obs(k).photons.V*dt ;
+        
+        A0 = sum( C_t.*obs(k).photons.V.*permute(obs(k).photons.V,[1 3 2]) , [2 3] ) ;
+        obs(k).photons.V(:,2) = obs(k).photons.V(:,2) - dt*sum( C_r.*obs(k).photons.V.*permute(obs(k).photons.V,[1 3 2]) , [2 3] ) + dt*obs(k).photons.V(:,2).*A0;
+        obs(k).photons.V(:,3) = obs(k).photons.V(:,3) - dt*sum( C_p.*obs(k).photons.V.*permute(obs(k).photons.V,[1 3 2]) , [2 3] ) + dt*obs(k).photons.V(:,3).*A0;
+        
+        obs(k).photons.R = obs(k).photons.X(:,2) ;
+        
+        %remove photons that entered the event horizon, this can only
+        %happen due to numerical inaccuracies
+        i = obs(k).photons.R < 1 ;
+        
+        obs(k).photons.X(i , : ) = [] ;
+        obs(k).photons.V(i , : ) = [] ;
+        obs(k).photons.R(i,  : ) = [] ;
+        
+        %new light pulse
+        if floor(obs(k).tau/obs(k).pulsePeriod) > obs(k).p
+            [X,V]=lightpulse(obs(k).r,obs(k).x(3),obs(k).n) ;
+            obs(k).p = obs(k).p + 1 ;
+            R = X(:,2) ;
+            obs(k).photons.X = [obs(k).photons.X ; X] ;
+            obs(k).photons.V = [obs(k).photons.V ; V] ;
+            obs(k).photons.R = [obs(k).photons.R ; R] ;
+            
+            if length( obs(k).photons.X ) > max_photons
+                old = length(obs(k).photons.X)-max_photons ;
+                obs(k).photons.X = obs(k).photons.X(old+1:end , : ) ;
+                obs(k).photons.V = obs(k).photons.V(old+1:end , : ) ;
+                obs(k).photons.R = obs(k).photons.R(old+1:end , : ) ;
+            end
+        end
+        
+        h(k).XData = obs(k).photons.X(:,2).*cos(obs(k).photons.X(:,3)) ;
+        h(k).YData = obs(k).photons.X(:,2).*sin(obs(k).photons.X(:,3)) ;
+        
+        txt(k).String = sprintf('\\tau_%d = %f, r_%d = %f',k,obs(k).tau,k,obs(k).r);
+        
+    end
+    
+    ttl.String = sprintf('Schwarzschild coordinates, T = %.3f',T) ;
+    drawnow ;
+end
+
+
+    function [X,V]=lightpulse(r,phi,n)
+        u = 1/r*sqrt(1 - 1/r)*cos(0:4*pi/n:2*pi) ; %dphi/dt
+        V = zeros(length(u),3) ;
+        V(:,1) = 1 ; %dt/dt
+        V(:,2) = real(sqrt( (1-1/r).^2 - r*(r-1)*u.^2 )) ; %dr/dt
+        V(:,3) = u ;
+        V = [V ; V.*[1 -1  1]];
+        
+        X = zeros(size(V)) ; %X = [t r phi]
+        X(:,2) = r ;
+        X(:,3) = phi ;
+    end
+
+    function [C_r,C_phi,C_t] = Christoffel(R)
+        
+        % Christoffel symbols for the Schwarzschild metric
+        % in Schwarzschild coordinates (t,r,phi)
+        
+        n = length(R) ;
+        
+        R = reshape(R,[1 1 n]) ;
+        O = zeros(size(R)) ;
+        
+        C_r = [ (R-1)./R.^3/2  O  O;
+            O   -1./R./(R-1)/2 O;
+            O       O     -(R-1)] ;
+        
+        C_phi = [O    O    O;
+            O    O   1./R;
+            O   1./R  O ] ;
+        
+        C_t =    [O    1./R./(R-1)/2    O;
+            1./R./(R-1)/2    O   O;
+            O   O  O ] ;
+        
+        %make size nx3x3
+        C_t =   permute(C_t,[3 1 2]) ;
+        C_r =   permute(C_r,[3 1 2]) ;
+        C_phi = permute(C_phi,[3 1 2]) ;
+    end
+
+  
+end
