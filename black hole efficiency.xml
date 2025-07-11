@@ -1,0 +1,53 @@
+% MATLAB script to plot quantum heat engine efficiency vs. black hole mass
+% Supports claim: "Smaller black holes (high T_H) provide higher efficiency"
+% Author: Begum, Koç University, Mechanical Engineering & Physics Minor
+% Date: July 11, 2025
+
+% Physical constants
+hbar = 1.0545718e-34; % Reduced Planck constant (J·s)
+c = 2.99792458e8; % Speed of light (m/s)
+G = 6.67430e-11; % Gravitational constant (m^3 kg^-1 s^-2)
+kB = 1.380649e-23; % Boltzmann constant (J/K)
+T_CMB = 2.725; % Cosmic microwave background temperature (K)
+
+% Black hole masses (kg): from primordial (10^12 kg) to stellar-mass (10^30 kg)
+masses = logspace(12, 30, 100); % 100 points for smooth plotting
+
+% Initialize array for efficiency
+eta = zeros(size(masses)); % Efficiency of quantum heat engine
+T_H = zeros(size(masses)); % Hawking temperature (K) for reference
+
+% Calculate efficiency
+for i = 1:length(masses)
+    M = masses(i);
+    
+    % Hawking temperature: T_H = (hbar * c^3) / (8 * pi * kB * G * M)
+    T_H(i) = (hbar * c^3) / (8 * pi * kB * G * M);
+    
+    % Efficiency: eta = 1 - T_CMB / T_H
+    eta(i) = 1 - T_CMB / T_H(i);
+    if eta(i) < 0 % Ensure physical bounds (eta >= 0)
+        eta(i) = 0;
+    end
+end
+
+% Create log-log plot
+figure('Position', [100, 100, 600, 400]);
+loglog(masses, eta, 'b-', 'LineWidth', 2);
+hold on;
+% Add annotation for smaller black holes
+plot(masses(1), eta(1), 'ro', 'MarkerSize', 8, 'DisplayName', 'M = 10^{12} kg');
+text(masses(1)*1.5, eta(1)*0.95, 'Smaller Black Holes: Higher T_H, Higher \eta', ...
+     'FontSize', 10, 'Color', 'red');
+xlabel('Black Hole Mass (kg)');
+ylabel('Efficiency (\eta)');
+title('Quantum Heat Engine Efficiency vs. Black Hole Mass');
+grid on;
+legend('Efficiency', 'Location', 'southwest');
+set(gca, 'FontSize', 12);
+
+% Save plot for Astrobites/paper
+saveas(gcf, 'efficiency_vs_mass.png');
+
+% Display sample efficiency for smallest mass
+fprintf('Efficiency for M = 10^12 kg: %.2f%%\n', eta(1) * 100);
